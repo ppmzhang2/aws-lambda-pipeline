@@ -14,121 +14,87 @@ provider "aws" {
 }
 
 # Variables
-variable "bucket_name" {
-  description = "S3 bucket name"
+variable "bucket_earthquake_raw" {
+  description = "S3 bucket name for storing raw earthquake data"
   type        = string
-  default     = "bucket-earthquake"
+  default     = "earthquake-raw"
 }
 
-variable "ecr_repository_name" {
-  description = "ECR repository name"
+variable "bucket_earthquake_processed" {
+  description = "S3 bucket name for storing processed earthquake data"
+  type        = string
+  default     = "earthquake-processed"
+}
+
+variable "ecr_repo_fetch_earthquake" {
+  description = "Name of the ECR repo for fetching earthquake raw data"
   type        = string
   default     = "fetch-api-earthquake"
 }
 
-# Create an AWS ECR repository
-resource "aws_ecr_repository" "earthquake_data_fetcher" {
-  name = var.ecr_repository_name
+variable "ecr_repo_process_earthquake" {
+  description = "Name of the ECR repo for processing earthquake data"
+  type        = string
+  default     = "process-csv-earthquake"
+}
+
+# Create an AWS ECR repository (fetch earthquake data)
+resource "aws_ecr_repository" "fetch_earthquake" {
+  name = var.ecr_repo_fetch_earthquake
+}
+
+# Create an AWS ECR repository (process earthquake data)
+resource "aws_ecr_repository" "process_earthquake" {
+  name = var.ecr_repo_process_earthquake
 }
 
 # Create an S3 bucket for storing earthquake data CSVs
-resource "aws_s3_bucket" "earthquake_data_bucket" {
-  bucket = var.bucket_name
+resource "aws_s3_bucket" "earthquake_raw" {
+  bucket = var.bucket_earthquake_raw
 }
 
-# IAM Role for Lambda execution
-resource "aws_iam_role" "lambda_exec_role" {
-  name = "lambda_exec_role"
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "lambda.amazonaws.com"
-      }
-    }]
-  })
-}
-
-# Attach the necessary policies to the Lambda execution role
-resource "aws_iam_role_policy" "lambda_exec_policy" {
-  role = aws_iam_role.lambda_exec_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ],
-        Effect   = "Allow",
-        Resource = "arn:aws:logs:*:*:*"
-      },
-      {
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject",
-          "s3:ListBucket"
-        ],
-        Effect = "Allow",
-        Resource = [
-          aws_s3_bucket.earthquake_data_bucket.arn,
-          "${aws_s3_bucket.earthquake_data_bucket.arn}/*"
-        ]
-      },
-      {
-        Action = [
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage",
-          "ecr:BatchCheckLayerAvailability"
-        ],
-        Effect   = "Allow",
-        Resource = aws_ecr_repository.earthquake_data_fetcher.arn
-      }
-    ]
-  })
-}
-
-# Lambda execution policy for ECR access
-resource "aws_iam_role_policy" "ecr_lambda_exec_policy" {
-  role = aws_iam_role.lambda_exec_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = [
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:BatchGetImage",
-          "ecr:GetDownloadUrlForLayer"
-        ],
-        Effect   = "Allow",
-        Resource = aws_ecr_repository.earthquake_data_fetcher.arn
-      },
-      {
-        Action   = "ecr:GetAuthorizationToken",
-        Effect   = "Allow",
-        Resource = "*"
-      }
-    ]
-  })
+# Create an S3 bucket for storing processed earthquake data
+resource "aws_s3_bucket" "earthquake_processed" {
+  bucket = var.bucket_earthquake_processed
 }
 
 # Output the necessary variables for deployment
-output "ecr_repository_url" {
-  value       = aws_ecr_repository.earthquake_data_fetcher.repository_url
-  description = "The URL of the ECR repository to push Docker images."
+output "ecr_fetch_earthquake_url" {
+  value       = aws_ecr_repository.fetch_earthquake.repository_url
+  description = "The URL of the ECR repo for fetching earthquake raw data."
 }
 
-output "s3_bucket_name" {
-  value       = aws_s3_bucket.earthquake_data_bucket.bucket
-  description = "The name of the S3 bucket where earthquake data will be stored."
+output "ecr_fetch_earthquake_arn" {
+  value       = aws_ecr_repository.fetch_earthquake.arn
+  description = "The ARN of the ECR repo for fetching earthquake raw data."
 }
 
-output "lambda_role_arn" {
-  value       = aws_iam_role.lambda_exec_role.arn
-  description = "The ARN of the IAM Role assigned to the Lambda function."
+output "ecr_process_earthquake_url" {
+  value       = aws_ecr_repository.process_earthquake.repository_url
+  description = "The URL of the ECR repo for processing earthquake raw data."
+}
+
+output "ecr_process_earthquake_arn" {
+  value       = aws_ecr_repository.process_earthquake.arn
+  description = "The ARN of the ECR repo for processing earthquake raw data."
+}
+
+output "s3_bucket_raw_earthquake_arn" {
+  value       = aws_s3_bucket.earthquake_raw.arn
+  description = "ARN of the S3 bucket for raw earthquake data."
+}
+
+output "s3_bucket_raw_earthquake_id" {
+  value       = aws_s3_bucket.earthquake_raw.id
+  description = "ID of the S3 bucket for raw earthquake data."
+}
+
+output "s3_bucket_processed_earthquake_arn" {
+  value       = aws_s3_bucket.earthquake_processed.arn
+  description = "ARN of the S3 bucket for processed earthquake data."
+}
+
+output "s3_bucket_processed_earthquake_id" {
+  value       = aws_s3_bucket.earthquake_processed.id
+  description = "ID of the S3 bucket for processed earthquake data."
 }

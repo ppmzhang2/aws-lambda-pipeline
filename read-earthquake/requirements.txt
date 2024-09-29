@@ -1,0 +1,4 @@
+boto3==1.28.38
+aws_lambda_typing==2.20.0
+duckdb==0.10.1
+pandas==2.1.4
