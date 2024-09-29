@@ -10,7 +10,7 @@ import json
 from math import floor
 
 import aiohttp
-from aws_lambda_typing import LambdaContext
+from aws_lambda_typing.context import Context
 import boto3
 
 _BASE_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson"
@@ -177,7 +177,7 @@ def upload_to_s3(bucket_name: str, key: str, csv_data: str) -> None:
 
 
 # Lambda handler function
-def handler(event: dict, context: LambdaContext) -> dict:  # noqa: ARG001
+def handler(event: dict, context: Context) -> dict:  # noqa: ARG001
     """Lambda handler function to fetch earthquake data and upload it to S3."""
     # Extract parameters from event
     dt_beg = datetime.date.fromisoformat(event.get("start_date", "2020-01-01"))
