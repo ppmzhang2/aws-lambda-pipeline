@@ -1,0 +1,9 @@
+# Exclude configuration files
+ruff.toml
+README.md
+
+# Exclude Terraform files and infra folder
+infra/*
+
+# Exclude other potential files not needed in the image
+.github/
