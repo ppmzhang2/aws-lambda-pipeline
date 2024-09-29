@@ -1,13 +1,24 @@
-name: Build and Push Docker Image to ECR
+name: Docker Build and Push
 
 on:
   push:
+    branches:
+      - master
+  pull_request:
     branches:
       - master
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      ECR_REGISTRY: ${{ secrets.AWS_ECR_REGISTRY }}
+      ECR_REPOSITORY: ${{ secrets.AWS_ECR_REPOSITORY }}
+      IMAGE_TAG: latest
 
     steps:
       - name: Checkout Code
@@ -19,18 +30,16 @@ jobs:
       - name: Log in to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+        with:
+          region: ${{ secrets.AWS_REGION }}  # Pass the AWS region explicitly
+          registry-type: private
 
-      - name: Build, Tag, and Push Docker Image
-        env:
-          ECR_REGISTRY: ${{ secrets.AWS_ECR_REGISTRY }}
-          ECR_REPOSITORY: ${{ secrets.AWS_ECR_REPOSITORY }}
-          IMAGE_TAG: latest
+      - name: Build, tag, and push Docker image to Amazon ECR
         run: |
           # Build the Docker image
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          
           # Push the Docker image to ECR
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
       - name: Logout from Amazon ECR
-        run: docker logout ${{ secrets.AWS_ECR_REGISTRY }}
+        run: docker logout $ECR_REGISTRY

@@ -17,6 +17,12 @@ coverage.txt
 # IDE
 .vscode/
 
+# terraform
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+
 # misc
 data/
 checkpoints/

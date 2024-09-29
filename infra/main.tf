@@ -13,14 +13,27 @@ provider "aws" {
   region = "ap-southeast-2"
 }
 
+# Variables
+variable "bucket_name" {
+  description = "S3 bucket name"
+  type        = string
+  default     = "bucket-earthquake"
+}
+
+variable "ecr_repository_name" {
+  description = "ECR repository name"
+  type        = string
+  default     = "fetch-api-earthquake"
+}
+
 # Create an AWS ECR repository
 resource "aws_ecr_repository" "earthquake_data_fetcher" {
-  name = "earthquake-data-fetcher"
+  name = var.ecr_repository_name
 }
 
 # Create an S3 bucket for storing earthquake data CSVs
 resource "aws_s3_bucket" "earthquake_data_bucket" {
-  bucket = "earthquake-data-bucket"
+  bucket = var.bucket_name
 }
 
 # IAM Role for Lambda execution
