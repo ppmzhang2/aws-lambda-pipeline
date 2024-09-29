@@ -1,0 +1,25 @@
+# general things to ignore
+.DS_Store
+build_contrib/
+build/
+dist/
+.cache/
+*.egg-info/
+*.egg
+*.py[cod]
+__pycache__/
+*.so
+*~
+
+# test
+coverage.txt
+
+# IDE
+.vscode/
+
+# misc
+data/
+checkpoints/
+config/
+.python-version
+ruff.log
