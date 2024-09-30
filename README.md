@@ -11,40 +11,34 @@ This project fetches earthquake data from the USGS API, converts it into CSV for
 
 ## Usage
 
-1. Set up AWS ECR and S3
+- Set up AWS Resources by applying the Terraform configuration in the `infra/resources` directory.
 
-   - Create an ECR repository to store the Docker image.
-   - Create an S3 bucket to store the earthquake data CSV files.
+  ```bash
+  cd infra/resources
+  terraform init
+  terraform apply
+  ```
 
-2. Build and Run Locally
+- Deploy with GitHub Actions
 
-   ```bash
-   docker build -t earthquake-fetcher .
-   docker run -e AWS_ACCESS_KEY_ID=<your-access-key> \
-              -e AWS_SECRET_ACCESS_KEY=<your-secret-key> \
-              earthquake-fetcher
-   ```
+  - Configure GitHub secrets for AWS credentials and ECR repository details:
 
-3. Deploy with GitHub Actions
+    - `AWS_REGION`
+    - `AWS_ACCESS_KEY_ID`
+    - `AWS_SECRET_ACCESS_KEY`
+    - `AWS_ECR_REGISTRY`
+    - `AWS_ECR_REPOSITORY`
 
-   - Configure GitHub secrets for AWS credentials and ECR repository details:
+  - Push changes to the `master` branch to trigger the CI/CD workflow.
 
-     - `AWS_ACCESS_KEY_ID`
-     - `AWS_SECRET_ACCESS_KEY`
-     - `AWS_REGION`
-     - `AWS_ECR_REGISTRY`
-     - `AWS_ECR_REPOSITORY`
+- Invoke the Lambda Function
 
-   - Push changes to the `master` branch to trigger the CI/CD workflow.
+  - Trigger the Lambda function with a JSON payload containing the desired `start_date`, `end_date`, and `bucket_name`.
 
-4. Invoke the Lambda Function
-
-   - Trigger the Lambda function with a JSON payload containing the desired `start_date`, `end_date`, and `bucket_name`.
-
-   ```json
-   {
-     "start_date": "2020-01-01",
-     "end_date": "2020-01-10",
-     "bucket_name": "your-s3-bucket"
-   }
-   ```
+  ```json
+  {
+    "start_date": "2020-01-01",
+    "end_date": "2020-01-10",
+    "bucket_name": "bucket-earthquake"
+  }
+  ```
