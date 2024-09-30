@@ -13,11 +13,6 @@ provider "aws" {
   region = "ap-southeast-2"
 }
 
-variable "account_id" {
-  type        = string
-  description = "The AWS account ID."
-}
-
 variable "ecr_repo_url" {
   type        = string
   description = "The URL of the ECR repository containing the Docker image."
@@ -30,12 +25,19 @@ variable "ecr_repo_arn" {
 
 variable "s3_bucket_arn" {
   type        = string
-  description = "The ARN of the S3 bucket containing the earthquake data."
+  description = "The ARN of the S3 bucket containing raw earthquake data."
+}
+
+variable "lambda_role_name" {
+  type        = string
+  description = "The name of the IAM role for Lambda execution."
+  default     = "role-fetch-raw-earthquake"
 }
 
 # IAM Role for Lambda execution
 resource "aws_iam_role" "lambda_exec_role" {
-  name = "lambda_exec_role"
+  name = var.lambda_role_name
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -96,7 +98,7 @@ resource "aws_iam_role_policy" "lambda_exec_policy" {
   })
 }
 
-# Lambda execution policy for ECR access
+# Attach ECR policies to the Lambda execution role
 resource "aws_iam_role_policy" "ecr_lambda_exec_policy" {
   role = aws_iam_role.lambda_exec_role.id
 
@@ -136,15 +138,7 @@ resource "aws_lambda_function" "docker_lambda" {
   }
 
   memory_size = 1024
-  timeout     = 30
-}
-
-# Lambda permissions to allow invocation by S3
-resource "aws_lambda_permission" "allow_invoke" {
-  statement_id  = "AllowExecutionFromS3"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.docker_lambda.function_name
-  principal     = "s3.amazonaws.com"
+  timeout     = 120
 }
 
 # CloudWatch Log Group for Lambda Function
@@ -177,6 +171,11 @@ EOF
 }
 
 # Outputs
+output "lambda_function_arn" {
+  value       = aws_lambda_function.docker_lambda.arn
+  description = "The ARN of the Lambda function."
+}
+
 output "sns_topic_arn" {
   value       = aws_sns_topic.earthquake_success_topic.arn
   description = "The ARN of the SNS topic for earthquake data fetch success events."
