@@ -7,7 +7,9 @@ import csv
 import datetime
 import io
 import json
+import logging
 from math import floor
+import os
 
 import aiohttp
 from aws_lambda_typing.context import Context
@@ -16,6 +18,11 @@ import boto3
 _BASE_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson"
 RATE_LIMIT = 5  # Maximum number of requests per second
 REQUEST_TIMEOUT = 2  # Timeout between requests in seconds
+
+# Set up basic logging configuration
+logging.basicConfig(level=logging.INFO)
+
+sns_client = boto3.client("sns")
 
 Feature = namedtuple(
     "Feature",
@@ -83,11 +90,14 @@ def _parse_feature(dc: dict) -> Feature:
         id=dc["id"],
         mag=dc["properties"]["mag"],
         place=dc["properties"]["place"],
-        time=datetime.datetime.fromtimestamp(dc["properties"]["time"] / 1e3,
-                                             tz=datetime.UTC),
-        updated=datetime.datetime.fromtimestamp(dc["properties"]["updated"] /
-                                                1e3,
-                                                tz=datetime.UTC),
+        time=datetime.datetime.fromtimestamp(
+            dc["properties"]["time"] / 1e3,
+            tz=datetime.UTC,
+        ),
+        updated=datetime.datetime.fromtimestamp(
+            dc["properties"]["updated"] / 1e3,
+            tz=datetime.UTC,
+        ),
         tz=dc["properties"]["tz"],
         url=dc["properties"]["url"],
         detail=dc["properties"]["detail"],
@@ -179,28 +189,37 @@ def upload_to_s3(bucket_name: str, key: str, csv_data: str) -> None:
 # Lambda handler function
 def handler(event: dict, context: Context) -> dict:  # noqa: ARG001
     """Lambda handler function to fetch earthquake data and upload it to S3."""
-    # Extract parameters from event
-    dt_beg = datetime.date.fromisoformat(event.get("start_date", "2020-01-01"))
-    dt_end = datetime.date.fromisoformat(event.get("end_date", "2020-01-10"))
-    bucket_name = event.get("bucket_name")
-    file_key = event.get("file_key", f"earthquake_data_{dt_beg}_{dt_end}.csv")
+    logging.info(f"Processing event: {json.dumps(event)}")
 
-    # Fetch the earthquake data
-    features = asyncio.run(all_features(dt_beg, dt_end))
+    try:
+        # Extract parameters from event
+        dt_beg = datetime.date.fromisoformat(
+            event.get("start_date", "2020-01-01"))
+        dt_end = datetime.date.fromisoformat(
+            event.get("end_date", "2020-01-10"))
+        bucket_name = event.get("bucket_name")
+        file_key = event.get("file_key",
+                             f"earthquake_data_{dt_beg}_{dt_end}.csv")
 
-    # Convert the features list to CSV format
-    csv_data = convert_to_csv(features)
+        # Fetch the earthquake data
+        features = asyncio.run(all_features(dt_beg, dt_end))
 
-    # Upload the CSV file to S3
-    upload_to_s3(bucket_name, file_key, csv_data)
+        # Convert the features list to CSV format
+        csv_data = convert_to_csv(features)
 
-    return {
-        "statusCode":
-        200,
-        "body":
-        json.dumps({
-            "message":
-            f"CSV file successfully uploaded to s3://{bucket_name}/{file_key}",
-            "total_records": len(features),
-        }),
-    }
+        # Upload the CSV file to S3
+        upload_to_s3(bucket_name, file_key, csv_data)
+
+    except Exception as e:
+        logging.exception("An error occurred")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": str(e)}),
+        }
+    else:
+        resp = sns_client.publish(
+            TopicArn=os.environ["SNS_TOPIC_ARN"],
+            Message="CSV file successfully uploaded",
+        )
+        logging.info("CSV file successfully uploaded")
+        return resp
