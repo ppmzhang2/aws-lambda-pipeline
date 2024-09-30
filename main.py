@@ -83,11 +83,14 @@ def _parse_feature(dc: dict) -> Feature:
         id=dc["id"],
         mag=dc["properties"]["mag"],
         place=dc["properties"]["place"],
-        time=datetime.datetime.fromtimestamp(dc["properties"]["time"] / 1e3,
-                                             tz=datetime.UTC),
-        updated=datetime.datetime.fromtimestamp(dc["properties"]["updated"] /
-                                                1e3,
-                                                tz=datetime.UTC),
+        time=datetime.datetime.fromtimestamp(
+            dc["properties"]["time"] / 1e3,
+            tz=datetime.UTC,
+        ),
+        updated=datetime.datetime.fromtimestamp(
+            dc["properties"]["updated"] / 1e3,
+            tz=datetime.UTC,
+        ),
         tz=dc["properties"]["tz"],
         url=dc["properties"]["url"],
         detail=dc["properties"]["detail"],

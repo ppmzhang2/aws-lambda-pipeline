@@ -117,6 +117,26 @@ resource "aws_iam_role_policy" "ecr_lambda_exec_policy" {
   })
 }
 
+# Create a CloudWatch Log Group for Lambda A
+resource "aws_cloudwatch_log_group" "lambda_a_log_group" {
+  name              = "/aws/lambda/docker-lambda-function"
+  retention_in_days = 14
+}
+
+# Define a CloudWatch Log Metric Filter to monitor successful Lambda executions
+resource "aws_cloudwatch_log_metric_filter" "lambda_a_success_metric" {
+  name           = "lambda_a_success_metric"
+  log_group_name = aws_cloudwatch_log_group.lambda_a_log_group.name
+
+  pattern = "\"CSV file successfully uploaded\""
+
+  metric_transformation {
+    name      = "LambdaASuccessMetric"
+    namespace = "LambdaA/Metrics"
+    value     = "1"
+  }
+}
+
 # Output the necessary variables for deployment
 output "ecr_repository_url" {
   value       = aws_ecr_repository.earthquake_data_fetcher.repository_url
