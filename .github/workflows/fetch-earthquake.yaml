@@ -5,20 +5,12 @@ on:
     branches:
       - master
     paths:
-      - 'fetch-earthquake/**'  # Only trigger for fetch-earthquake modification
-    paths-ignore:
-      - 'fetch-earthquake/README.md'
-      - 'fetch-earthquake/ruff.toml'
-      - 'fetch-earthquake/infra/**'
+      - 'fetch-earthquake/**'
   pull_request:
     branches:
       - master
     paths:
-      - 'fetch-earthquake/**'  # Only trigger for fetch-earthquake modification
-    paths-ignore:
-      - 'fetch-earthquake/README.md'
-      - 'fetch-earthquake/ruff.toml'
-      - 'fetch-earthquake/infra/**'
+      - 'fetch-earthquake/**'
 
 jobs:
   build:
@@ -35,8 +27,6 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
-        with:
-          path: fetch-earthquake  # Checkout fetch-earthquake subdirectory
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -50,11 +40,9 @@ jobs:
 
       - name: Build, tag, and push Docker image to Amazon ECR
         run: |
-          # Navigate to fetch-earthquake directory
-          cd fetch-earthquake
           # Build the Docker image
-          docker build -t $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG .
-          # Push the Docker image to ECR
+          docker build -t $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG \
+            -f fetch-earthquake/Dockerfile fetch-earthquake
           docker push $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
 
       - name: Logout from Amazon ECR

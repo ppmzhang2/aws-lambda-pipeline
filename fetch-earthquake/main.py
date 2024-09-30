@@ -221,5 +221,8 @@ def handler(event: dict, context: Context) -> dict:  # noqa: ARG001
             TopicArn=os.environ["SNS_TOPIC_ARN"],
             Message="CSV file successfully uploaded",
         )
-        logging.info("CSV file successfully uploaded")
-        return resp
+        logging.info(f"SNS message sent: {resp}")
+        return {
+            "statusCode": 200,
+            "body": json.dumps({"message": "CSV file successfully uploaded"}),
+        }
