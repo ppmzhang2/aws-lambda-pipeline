@@ -1,4 +1,4 @@
-"""Read a CSV file from S3, convert it to Parquet, and save it back to S3."""
+"""Read a S3 CSV file, convert to partitioned Parquet and save back to S3."""
 
 import json
 import logging
@@ -24,17 +24,15 @@ def receive_s3_event(event: dict) -> tuple[str, str]:
 def handler(event: dict, context: Context) -> dict:  # noqa: ARG001
     """Lambda handler triggered by S3 events."""
     bucket_in, key_in = receive_s3_event(event)
-    bucket_out = os.environ.get("OUTPUT_BUCKET", bucket_in)
-    key_out = f"{os.path.basename(key_in).replace('.csv', '.parquet')}"
-    s3path_csv = f"s3://{bucket_in}/{key_in}"
-    s3path_pq = f"s3://{bucket_out}/{key_out}"
-
     logging.info(f"Bucket: {bucket_in}; Key: {key_in}")
+
+    s3path_csv = f"s3://{bucket_in}/{key_in}"
+    bucket_out = os.environ.get("OUTPUT_BUCKET", bucket_in)
 
     try:
         logging.info(f"Processing file: {key_in}")
-        csv2pq(s3path_csv, s3path_pq)
-        logging.info(f"Parquet file saved to {s3path_pq}")
+        csv2pq(s3path_csv, bucket_out)
+        logging.info(f"Partitioned Parquet files saved to {bucket_out}")
 
     except Exception as e:
         logging.exception(f"Error processing file {key_in}")
@@ -45,12 +43,15 @@ def handler(event: dict, context: Context) -> dict:  # noqa: ARG001
 
     return {
         "statusCode": 200,
-        "body": json.dumps(f"Saved Parquet for {key_in}."),
+        "body": json.dumps(f"Saved partitioned Parquet for {key_in}."),
     }
 
 
-def csv2pq(path_in: str, path_out: str) -> None:
-    """Convert a S3 CSV file to S3 Parquet with DuckDB's S3 streaming."""
+def csv2pq(path_in: str, bucket_out: str) -> None:
+    """Convert a S3 CSV file to S3 Parquet with DuckDB's S3 streaming.
+
+    Partitioned by year, month, and day.
+    """
     try:
         # Connect to DuckDB and process the CSV directly from S3
         con = duckdb.connect(database=":memory:")
@@ -59,13 +60,17 @@ def csv2pq(path_in: str, path_out: str) -> None:
 
         logging.info(f"Loading extension from {ext_dir}")
 
-        con.execute(f"SET extension_directory = '{ext_dir}';")
+        con.execute(f"""
+            SET extension_directory = '{ext_dir}';
+            SET temp_directory = '/tmp';
+            SET memory_limit='1GB';
+        """)
 
         # Load the httpfs extension to allow S3 access
         con.execute("LOAD httpfs;")
 
-        # Streaming: DuckDB reads the CSV directly from S3 and writes the
-        # Parquet directly back to S3
+        # Read the CSV from S3, and partition by year month extracted from time
+        # NOTE: we do not add the day as partitioning consumes too much memory
         con.execute(f"""
             COPY (
                 SELECT
@@ -95,13 +100,19 @@ def csv2pq(path_in: str, path_out: str) -> None:
                     title,
                     longitude,
                     latitude,
-                    depth
+                    depth,
+                    -- Extract year, month, and day from the "time" column
+                    EXTRACT(YEAR FROM time)  AS year,
+                    EXTRACT(MONTH FROM time) AS month,
                FROM read_csv_auto("{path_in}", header=True)
-            ) TO "{path_out}" (FORMAT 'parquet');
+            ) TO 's3://{bucket_out}/' 
+            (FORMAT 'parquet', PARTITION_BY (year, month),
+             OVERWRITE_OR_IGNORE);
         """)
 
-        logging.info(f"Parquet written to {path_out}")
+        logging.info(
+            f"Parquet written to s3://{bucket_out}/year=.../month=...")
 
     except Exception:
-        logging.exception("Error converting CSV to Parquet")
+        logging.exception("Error converting CSV to partitioned Parquet")
         raise

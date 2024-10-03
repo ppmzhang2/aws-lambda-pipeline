@@ -147,8 +147,12 @@ resource "aws_lambda_function" "csv_processor" {
     }
   }
 
-  memory_size = 1024
+  memory_size = 3008 # max memory size
   timeout     = 300
+
+  ephemeral_storage {
+    size = 8192 # 8GB
+  }
 }
 
 # CloudWatch Log Group for Lambda Function
