@@ -82,9 +82,17 @@ resource "aws_iam_role_policy" "lambda_exec_policy" {
         ]
       },
       {
-        Action   = "s3:PutObject",
-        Effect   = "Allow",
-        Resource = "arn:aws:s3:::${var.output_bucket_name}/*"
+        Action : [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket",
+          "s3:DeleteObject"
+        ],
+        Effect = "Allow",
+        Resource = [
+          "arn:aws:s3:::${var.output_bucket_name}",
+          "arn:aws:s3:::${var.output_bucket_name}/*"
+        ]
       },
       {
         Action = [
