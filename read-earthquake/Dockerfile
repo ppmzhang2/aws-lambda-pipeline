@@ -9,5 +9,8 @@ COPY . ${LAMBDA_TASK_ROOT}
 
 RUN pip install --no-cache-dir -r requirements.txt --target "${LAMBDA_TASK_ROOT}"
 
+# Preinstall the httpfs extension by running DuckDB and downloading the extension
+RUN python -c "import duckdb; duckdb.connect().execute('INSTALL httpfs;')"
+
 # Specify the entry point for the Lambda function
 CMD ["main.handler"]
