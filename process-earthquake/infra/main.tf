@@ -10,17 +10,28 @@ terraform {
 }
 
 provider "aws" {
-  region = "ap-southeast-2"
+  region = var.region
 }
 
-variable "ecr_repo_url" {
+variable "region" {
   type        = string
-  description = "The URL of the ECR repository containing the Docker image."
+  description = "The AWS region"
+  default     = "ap-southeast-2"
 }
 
-variable "ecr_repo_arn" {
+variable "account_id" {
   type        = string
-  description = "The ARN of the ECR repository containing the Docker image."
+  description = "The AWS account ID"
+}
+
+variable "ecr_repo_id" {
+  type        = string
+  description = "The ID of the ECR repository containing the Docker image."
+}
+
+variable "email_addr" {
+  type        = string
+  description = "The email address for SNS notifications"
 }
 
 variable "input_bucket_name" {
@@ -45,6 +56,12 @@ variable "lambda_func_name" {
   type        = string
   description = "The name of the Lambda function"
   default     = "func-process-csv-earthquake"
+}
+
+variable "sns_topic_name" {
+  type        = string
+  description = "The name of the SNS topic for alarm notifications"
+  default     = "fail-csv-processor"
 }
 
 # IAM Role for Lambda execution
@@ -121,7 +138,7 @@ resource "aws_iam_role_policy" "ecr_lambda_exec_policy" {
           "ecr:GetDownloadUrlForLayer"
         ],
         Effect   = "Allow",
-        Resource = var.ecr_repo_arn
+        Resource = "arn:aws:ecr:${var.region}:${var.account_id}:repository/${var.ecr_repo_id}"
       },
       {
         Action   = "ecr:GetAuthorizationToken",
@@ -138,7 +155,7 @@ resource "aws_lambda_function" "csv_processor" {
   role          = aws_iam_role.lambda_exec_role.arn
 
   package_type = "Image"
-  image_uri    = "${var.ecr_repo_url}:latest"
+  image_uri    = "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_repo_id}:latest"
 
   environment {
     variables = {
@@ -180,4 +197,38 @@ resource "aws_s3_bucket_notification" "s3_to_lambda" {
   }
 
   depends_on = [aws_lambda_permission.allow_s3_to_invoke_lambda]
+}
+
+# SNS Topic for CloudWatch Alarms
+resource "aws_sns_topic" "error_msg_csv_processor" {
+  name = var.sns_topic_name
+}
+
+# Create SNS subscription (e.g., email)
+resource "aws_sns_topic_subscription" "email_subscription" {
+  topic_arn = aws_sns_topic.error_msg_csv_processor.arn
+  protocol  = "email"
+  endpoint  = var.email_addr
+}
+
+# CloudWatch Alarm for Lambda Errors
+resource "aws_cloudwatch_metric_alarm" "lambda_error_alarm" {
+  alarm_name          = "alarm-fail-lambda-csv-processor"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 0
+
+  dimensions = {
+    FunctionName = aws_lambda_function.csv_processor.function_name
+  }
+
+  alarm_actions = [
+    aws_sns_topic.error_msg_csv_processor.arn
+  ]
+
+  treat_missing_data = "notBreaching"
 }

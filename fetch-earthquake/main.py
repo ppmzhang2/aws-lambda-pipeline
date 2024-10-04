@@ -15,15 +15,13 @@ import aiohttp
 from aws_lambda_typing.context import Context
 import boto3
 
-_BASE_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson"
+BASE_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson"
 RATE_LIMIT = 5  # Maximum number of requests per second
 REQUEST_TIMEOUT = 2  # Timeout between requests in seconds
+N_DAY = 10  # Number of days to fetch data in each batch
 
 # Set up basic logging configuration
 logging.basicConfig(level=logging.INFO)
-
-# # Legacy SNS message sending
-# sns_client = boto3.client("sns")
 
 Feature = namedtuple(
     "Feature",
@@ -158,7 +156,7 @@ async def fetch_save(
     """Fetch features for a given date range and upload the result to S3."""
     dt_beg_str = _date_str(date_beg)
     dt_end_str = _date_str(date_end)
-    url = _BASE_URL + f"&starttime={dt_beg_str}&endtime={dt_end_str}"
+    url = BASE_URL + f"&starttime={dt_beg_str}&endtime={dt_end_str}"
 
     async with (
             sem,
@@ -188,11 +186,10 @@ async def fetch_save_all(
     end_date: datetime.date,
     bucket: str,
     base_key: str,
-    days: int = 15,
 ) -> None:
     """Fetch and upload all features in range by dividing into coroutines."""
     sem = asyncio.Semaphore(RATE_LIMIT)
-    seq_range = _date_range_gen(start_date, end_date, days)
+    seq_range = _date_range_gen(start_date, end_date, N_DAY)
 
     coroutines = [
         fetch_save(start, end, sem, bucket, base_key)
@@ -224,12 +221,6 @@ def handler(event: dict, context: Context) -> dict:  # noqa: ARG001
             "body": json.dumps({"error": str(e)}),
         }
     else:
-        # # Legacy SNS message sending
-        # resp = sns_client.publish(
-        #     TopicArn=os.environ["SNS_TOPIC_ARN"],
-        #     Message="CSV file successfully uploaded",
-        # )
-        # logging.info(f"SNS message sent: {resp}")
         return {
             "statusCode": 200,
             "body": json.dumps({"message": "CSV file successfully uploaded"}),

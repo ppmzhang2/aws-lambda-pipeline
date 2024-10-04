@@ -10,17 +10,23 @@ terraform {
 }
 
 provider "aws" {
-  region = "ap-southeast-2"
+  region = var.region
 }
 
-variable "ecr_repo_url" {
+variable "region" {
   type        = string
-  description = "The URL of the ECR repository containing the Docker image."
+  description = "The AWS region"
+  default     = "ap-southeast-2"
 }
 
-variable "ecr_repo_arn" {
+variable "account_id" {
   type        = string
-  description = "The ARN of the ECR repository containing the Docker image."
+  description = "The AWS account ID"
+}
+
+variable "ecr_repo_id" {
+  type        = string
+  description = "The ID of the ECR repository containing the Docker image."
 }
 
 variable "s3_bucket_id" {
@@ -92,14 +98,7 @@ resource "aws_iam_role_policy" "lambda_exec_policy" {
           "ecr:BatchCheckLayerAvailability"
         ],
         Effect   = "Allow",
-        Resource = var.ecr_repo_arn
-      },
-      {
-        Action = [
-          "sns:Publish"
-        ],
-        Effect   = "Allow",
-        Resource = aws_sns_topic.earthquake_success_topic.arn
+        Resource = "arn:aws:ecr:${var.region}:${var.account_id}:repository/${var.ecr_repo_id}"
       }
     ]
   })
@@ -119,7 +118,7 @@ resource "aws_iam_role_policy" "ecr_lambda_exec_policy" {
           "ecr:GetDownloadUrlForLayer"
         ],
         Effect   = "Allow",
-        Resource = var.ecr_repo_arn
+        Resource = "arn:aws:ecr:${var.region}:${var.account_id}:repository/${var.ecr_repo_id}"
       },
       {
         Action   = "ecr:GetAuthorizationToken",
@@ -136,11 +135,10 @@ resource "aws_lambda_function" "docker_lambda" {
   role          = aws_iam_role.lambda_exec_role.arn
 
   package_type = "Image"
-  image_uri    = "${var.ecr_repo_url}:latest"
+  image_uri    = "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.ecr_repo_id}:latest"
 
   environment {
     variables = {
-      SNS_TOPIC_ARN = aws_sns_topic.earthquake_success_topic.arn
       BUCKET_NAME   = var.s3_bucket_id
     }
   }
@@ -155,36 +153,8 @@ resource "aws_cloudwatch_log_group" "lambda_log_group" {
   retention_in_days = 14
 }
 
-# SNS Topic for earthquake data success events
-resource "aws_sns_topic" "earthquake_success_topic" {
-  name = "earthquake-success-topic"
-}
-
-# Grant permissions for EventBridge to publish to SNS (if needed in the future)
-resource "aws_sns_topic_policy" "earthquake_success_topic_policy" {
-  arn    = aws_sns_topic.earthquake_success_topic.arn
-  policy = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": { "Service": "events.amazonaws.com" },
-      "Action": "sns:Publish",
-      "Resource": "${aws_sns_topic.earthquake_success_topic.arn}"
-    }
-  ]
-}
-EOF
-}
-
 # Outputs
 output "lambda_function_arn" {
   value       = aws_lambda_function.docker_lambda.arn
   description = "The ARN of the Lambda function."
-}
-
-output "sns_topic_arn" {
-  value       = aws_sns_topic.earthquake_success_topic.arn
-  description = "The ARN of the SNS topic for earthquake data fetch success events."
 }
