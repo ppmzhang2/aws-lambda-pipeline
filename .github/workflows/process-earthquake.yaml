@@ -1,16 +1,16 @@
-name: Docker Build and Push (read-earthquake)
+name: Docker Build and Push (process-earthquake)
 
 on:
   push:
     branches:
       - master
     paths:
-      - 'read-earthquake/**'
+      - 'process-earthquake/**'
   pull_request:
     branches:
       - master
     paths:
-      - 'read-earthquake/**'
+      - 'process-earthquake/**'
 
 jobs:
   build:
@@ -42,7 +42,7 @@ jobs:
         run: |
           # Build the Docker image
           docker build -t $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG \
-            -f read-earthquake/Dockerfile read-earthquake
+            -f process-earthquake/Dockerfile process-earthquake
           docker push $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
 
       - name: Logout from Amazon ECR

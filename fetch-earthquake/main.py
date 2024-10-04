@@ -22,7 +22,8 @@ REQUEST_TIMEOUT = 2  # Timeout between requests in seconds
 # Set up basic logging configuration
 logging.basicConfig(level=logging.INFO)
 
-sns_client = boto3.client("sns")
+# # Legacy SNS message sending
+# sns_client = boto3.client("sns")
 
 Feature = namedtuple(
     "Feature",
@@ -51,8 +52,8 @@ Feature = namedtuple(
         "dmin",
         "rms",
         "gap",
-        "magType",
-        "type",
+        "mag_type",
+        "category",
         "title",
         "longitude",
         "latitude",
@@ -117,8 +118,8 @@ def _parse_feature(dc: dict) -> Feature:
         dmin=dc["properties"]["dmin"],
         rms=dc["properties"]["rms"],
         gap=dc["properties"]["gap"],
-        magType=dc["properties"]["magType"],
-        type=dc["properties"]["type"],
+        mag_type=dc["properties"]["magType"],
+        category=dc["properties"]["type"],
         title=dc["properties"]["title"],
         longitude=dc["geometry"]["coordinates"][0],
         latitude=dc["geometry"]["coordinates"][1],
@@ -126,46 +127,7 @@ def _parse_feature(dc: dict) -> Feature:
     )
 
 
-async def fetch_features(
-    start_date: datetime.date,
-    end_date: datetime.date,
-    semaphore: asyncio.Semaphore,
-) -> list[Feature]:
-    """One fetch request to the USGS API."""
-    start_dt_str = _date_str(start_date)
-    end_dt_str = _date_str(end_date)
-    url = _BASE_URL + f"&starttime={start_dt_str}&endtime={end_dt_str}"
-
-    async with (
-            semaphore,
-            aiohttp.ClientSession() as client,
-            client.get(url) as resp,
-    ):
-        resp.raise_for_status()
-        seq = (await resp.json())["features"]
-        await asyncio.sleep(REQUEST_TIMEOUT)  # Rate limiting delay
-    return [_parse_feature(dc) for dc in seq]
-
-
-async def all_features(
-    start_date: datetime.date,
-    end_date: datetime.date,
-    days: int = 10,
-    rate_limit: int = RATE_LIMIT,
-) -> list[Feature]:
-    """Fetch all features in the date range."""
-    semaphore = asyncio.Semaphore(rate_limit)
-    seq_range = _date_range_gen(start_date, end_date, days)
-
-    coroutines = [
-        fetch_features(start, end, semaphore) for start, end in seq_range
-    ]
-
-    seq = await asyncio.gather(*coroutines)
-    return [item for sublist in seq for item in sublist]
-
-
-def convert_to_csv(features: list[Feature]) -> str:
+def feat2csv(features: list[Feature]) -> str:
     """Convert the features list to a CSV format."""
     output = io.StringIO()
     csv_writer = csv.writer(output)
@@ -180,35 +142,80 @@ def convert_to_csv(features: list[Feature]) -> str:
     return output.getvalue()
 
 
-def upload_to_s3(bucket_name: str, key: str, csv_data: str) -> None:
+def upload_to_s3(bucket: str, key: str, csv_data: str) -> None:
     """Upload the CSV data to the specified S3 bucket."""
     s3 = boto3.client("s3")
-    s3.put_object(Bucket=bucket_name, Key=key, Body=csv_data)
+    s3.put_object(Bucket=bucket, Key=key, Body=csv_data)
 
 
-# Lambda handler function
+async def fetch_save(
+    date_beg: datetime.date,
+    date_end: datetime.date,
+    sem: asyncio.Semaphore,
+    bucket: str,
+    base_key: str,
+) -> None:
+    """Fetch features for a given date range and upload the result to S3."""
+    dt_beg_str = _date_str(date_beg)
+    dt_end_str = _date_str(date_end)
+    url = _BASE_URL + f"&starttime={dt_beg_str}&endtime={dt_end_str}"
+
+    async with (
+            sem,
+            aiohttp.ClientSession() as client,
+            client.get(url) as resp,
+    ):
+        resp.raise_for_status()
+        seq = (await resp.json())["features"]
+        await asyncio.sleep(REQUEST_TIMEOUT)  # Rate limiting delay
+
+    features = [_parse_feature(dc) for dc in seq]
+
+    # Convert features to CSV
+    csv_data = feat2csv(features)
+
+    # Generate unique file key for this batch
+    file_key = f"{base_key}_{dt_beg_str}_{dt_end_str}.csv"
+
+    # Upload CSV data to S3
+    upload_to_s3(bucket, file_key, csv_data)
+
+    logging.info(f"Uploaded CSV data to S3: {file_key}")
+
+
+async def fetch_save_all(
+    start_date: datetime.date,
+    end_date: datetime.date,
+    bucket: str,
+    base_key: str,
+    days: int = 15,
+) -> None:
+    """Fetch and upload all features in range by dividing into coroutines."""
+    sem = asyncio.Semaphore(RATE_LIMIT)
+    seq_range = _date_range_gen(start_date, end_date, days)
+
+    coroutines = [
+        fetch_save(start, end, sem, bucket, base_key)
+        for start, end in seq_range
+    ]
+
+    await asyncio.gather(*coroutines)
+
+
 def handler(event: dict, context: Context) -> dict:  # noqa: ARG001
     """Lambda handler function to fetch earthquake data and upload it to S3."""
     logging.info(f"Processing event: {json.dumps(event)}")
 
     try:
+        bucket_id = os.environ["BUCKET_NAME"]
         # Extract parameters from event
-        dt_beg = datetime.date.fromisoformat(
-            event.get("start_date", "2020-01-01"))
-        dt_end = datetime.date.fromisoformat(
-            event.get("end_date", "2020-01-10"))
-        bucket_name = os.environ["BUCKET_NAME"]
-        file_key = event.get("file_key",
-                             f"earthquake_data_{dt_beg}_{dt_end}.csv")
-
-        # Fetch the earthquake data
-        features = asyncio.run(all_features(dt_beg, dt_end))
-
-        # Convert the features list to CSV format
-        csv_data = convert_to_csv(features)
-
-        # Upload the CSV file to S3
-        upload_to_s3(bucket_name, file_key, csv_data)
+        dt_beg_str = event.get("start_date", "2020-01-01")
+        dt_end_str = event.get("end_date", "2020-01-10")
+        dt_beg = datetime.date.fromisoformat(dt_beg_str)
+        dt_end = datetime.date.fromisoformat(dt_end_str)
+        base_key = f"eq_raw_{dt_beg_str}_{dt_end_str}"
+        # Fetch and upload earthquake data for each date range
+        asyncio.run(fetch_save_all(dt_beg, dt_end, bucket_id, base_key))
 
     except Exception as e:
         logging.exception("An error occurred")
@@ -217,11 +224,12 @@ def handler(event: dict, context: Context) -> dict:  # noqa: ARG001
             "body": json.dumps({"error": str(e)}),
         }
     else:
-        resp = sns_client.publish(
-            TopicArn=os.environ["SNS_TOPIC_ARN"],
-            Message="CSV file successfully uploaded",
-        )
-        logging.info(f"SNS message sent: {resp}")
+        # # Legacy SNS message sending
+        # resp = sns_client.publish(
+        #     TopicArn=os.environ["SNS_TOPIC_ARN"],
+        #     Message="CSV file successfully uploaded",
+        # )
+        # logging.info(f"SNS message sent: {resp}")
         return {
             "statusCode": 200,
             "body": json.dumps({"message": "CSV file successfully uploaded"}),
